@@ -83,7 +83,7 @@ angular.module('as.resources', [])
                     var deferred = $q.defer();
                     console.log("requesting upload")
 
-                    $serverAPI.resources.save({md5: $scope.md5, type: $scope.type},function (data, status, headers, config) {
+                    $serverAPI.resources.save({md5: $scope.MD5, type: $scope.type},function (data, status, headers, config) {
                             $scope.uploadUrl = data.preSignedUrl
                             $scope.resourceUrl =  data.preSignedUrl.split("?")[0];
                             deferred.resolve()
