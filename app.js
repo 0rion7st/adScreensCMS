@@ -20,11 +20,12 @@ mongoose.connect("mongodb://localhost/adScreens")
 require('./models/Ads');
 require('./models/Devices');
 require('./models/Resources');
+
 /*
 Route creation
  */
 var resources = require('./routes/resources');
-
+var sync = require('./routes/sync');
 
 var app = express();
 
@@ -44,6 +45,8 @@ app.use(cors());
 
 //wiring up routers
 app.use('/resources', resources);
+
+app.use('/sync', sync);
 
 // catch 404 and forward to error handler
 app.use(function(req, res, next) {

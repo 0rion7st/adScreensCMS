@@ -22,11 +22,14 @@
 <p class="browsehappy">You are using an <strong>outdated</strong> browser. Please <a href="http://browsehappy.com/">upgrade your browser</a> to improve your experience.</p>
 <![endif]-->
 <script src="bower_components/angular/angular.js"></script>
+<script src="bower_components/angular-resource/angular-resource.min.js"></script>
+
 <script src="bower_components/angular-route/angular-route.js"></script>
 <script src="components/resources/resources-directives.js"></script>
+<script src="components/server/server-service.js"></script>
 <script src="bower_components/spark-md5/spark-md5.min.js"></script>
 <script>
-    angular.module('ResourcesDemo', ['as.resources'])
+    angular.module('ResourcesDemo', ['as.resources','as.server','ngResource'])
 </script>
 </body>
 </html>
