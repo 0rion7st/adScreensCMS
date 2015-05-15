@@ -16,8 +16,8 @@ var config = require('../config');
 router.get('/', function(req, res, next) {
     Resources.find(function(err, resp_resources){
         if(err){ return next(err); }
-        var s3 = new AWS.S3({endpoint:config.s3bucket+'/sync',s3BucketEndpoint:true});
-        var params = {Bucket: 'adscreen.resources', Key: 'resources.json',  ACL: 'public-read', ContentType:'application/json',Body: JSON.stringify(resp_resources)};
+        var s3 = new AWS.S3({endpoint:config.s3bucket,s3BucketEndpoint:true});
+        var params = {Bucket: config.s3bucketName, Key: config.syncFolder + 'resources.json',  ACL: 'public-read', ContentType:'application/json',Body: JSON.stringify(resp_resources)};
         //TODO: Public read not good
         s3.upload( params, function (err) {
             if(err){ return next(err); }

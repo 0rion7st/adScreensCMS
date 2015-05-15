@@ -5,7 +5,7 @@
 
 angular.module('as.resources', [])
 
-    .directive('asUploadBtn', function ($q, $http,$serverAPI) {
+    .directive('asUploadBtn', function ($q, $http,$server) {
         return {
             transclude: true,
             restrict: 'E',
@@ -83,7 +83,7 @@ angular.module('as.resources', [])
                     var deferred = $q.defer();
                     console.log("requesting upload")
 
-                    $serverAPI.resources.save({md5: $scope.MD5, type: $scope.type},function (data, status, headers, config) {
+                    $server.resources.save({md5: $scope.MD5, type: $scope.type},function (data, status, headers, config) {
                             $scope.uploadUrl = data.preSignedUrl
                             $scope.resourceUrl =  data.preSignedUrl.split("?")[0];
                             deferred.resolve()

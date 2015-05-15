@@ -8,6 +8,6 @@ var DevicesSchema = new mongoose.Schema({
     model: mongoose.Schema.Types.Mixed,
     resolution: {width:Number, height: Number},
     landscape: Boolean
-});
+}, { versionKey: false });
 
 mongoose.model('Devices', DevicesSchema);

@@ -5,7 +5,7 @@
 
 var server = angular.module('as.server', ['ngResource'])
 //<editor-fold desc="$serverAPI">
-server.factory('$serverAPI', function ($resource) {
+server.factory('$server', function ($resource) {
     var endpoint = 'http://localhost:3000/'
 
     return {

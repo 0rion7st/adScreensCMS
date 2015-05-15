@@ -3,5 +3,7 @@
  */
 var config = {};
 config.s3bucket =  'http://adscreen.resources.s3.amazonaws.com';
-
+config.s3bucketName =  'adscreen.resources';
+config.resourcesFolder = 'resources/';
+config.syncFolder = 'sync/';
 module.exports = config;

@@ -1,4 +1,10 @@
-<input ng-model="photo"
-       onchange="angular.element(this).scope().file_changed(this)"
-       type="file" accept="*/*" />
-<as-upload-btn />
+<div>
+    <input type="button" value="sync" ng-click="sync()"/>
+    <as-upload-btn></as-upload-btn>
+    <ul>
+        <li ng-repeat = "res in resources">
+            <img src="http://adscreen.resources.s3.amazonaws.com/resources/{{res._id}}" alt=""/>
+        </li>
+    </ul>
+
+</div>

@@ -7,7 +7,7 @@ var ResourcesSchema = new mongoose.Schema({
     md5: String,
     path: String,
     type: String
-});
+}, { versionKey: false });
 
 
 

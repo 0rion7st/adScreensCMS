@@ -12,7 +12,7 @@ var config = require('../config');
 router.get('/', function(req, res, next) {
     Resources.find(function(err, resp_resources){
         if(err){ return next(err); }
-        res.json({data:resp_resources});
+        res.json(resp_resources);
     });
 });
 
@@ -22,7 +22,7 @@ router.post('/', function(req, res, next) {
         if(err){ return next(err); }
 
         var s3 = new AWS.S3({endpoint:config.s3bucket,s3BucketEndpoint:true});
-        var params = {Bucket: 'adscreen.resources', Key: resp_resource._id+'',Expires:60*60*24, ContentType:resp_resource.type, ACL: 'public-read'};
+        var params = {Bucket: config.s3bucketName, Key:config.resourcesFolder + resp_resource._id+'',Expires:60*60*24, ContentType:resp_resource.type, ACL: 'public-read'};
         //TODO: Public read not good
         //TODO: Content type verification
         s3.getSignedUrl('putObject', params, function (err, url) {

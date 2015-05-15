@@ -10,6 +10,6 @@ var AdsSchema = new mongoose.Schema({
     type: Number,
     transition: Number,
     content:mongoose.Schema.Types.Mixed
-});
+}, { versionKey: false });
 
 mongoose.model('Ads', AdsSchema);
