@@ -34,5 +34,8 @@ angular.module('myApp.view1', ['ngRoute'])
            $sync.subscribe("resources.json").then(null,null,getResourceUpdate)
        });
 
+        $scope.dummyModel={ resource:"bla"}
+
+
 
     });
