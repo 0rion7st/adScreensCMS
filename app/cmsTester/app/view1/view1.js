@@ -9,7 +9,7 @@ angular.module('myApp.view1', ['ngRoute'])
       });
     }])
 
-    .controller('View1Ctrl', function($scope, $server,$sync) {
+    .controller('View1Ctrl', function($scope, $server,$sync,$download) {
 
         //$scope.resources = $server.resources.query()
         $scope.sync  = function()
@@ -31,9 +31,26 @@ angular.module('myApp.view1', ['ngRoute'])
 
        $sync.ready.then(function()
        {
-           $sync.subscribe("resources.json").then(null,null,getResourceUpdate)
+         // $sync.subscribe("resources.json").then(null,null,getResourceUpdate)
        });
+        $download.download("https://s3-eu-west-1.amazonaws.com/adscreen.resources/resources/5551b54f4ca1efc81d7ed9b7").then(function(entity)
+        {
+            $scope.entity = entity
+            $scope.entity.resume()
+            var start = (new Date()).getTime()
+            $scope.entity.promise.then(function(ev)
+            {
+                var end = (new Date()).getTime()
+                console.log("Download complete in: "+Math.floor(end-start)/1000)
 
+                document.getElementById('testImg').src = ev.url
+
+            },null,function(va)
+            {
+
+
+            })
+        })
         $scope.dummyModel={ resource:"bla"}
 
 
