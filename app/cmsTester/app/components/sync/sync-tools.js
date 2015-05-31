@@ -8,7 +8,7 @@ var sync = angular.module('as.sync-tools', ['ngResource'])
 sync.factory('$store', function ($q) {
     var fileSystem = undefined
     var deferred = $q.defer()
-    var grantedQuotaBytes = 1024*1024*1000 //In bytes 500MBs
+    var grantedQuotaBytes = localStorage.getItem("$store_grantedBytes") || 1024*1024*1000 //In bytes 1000MBs
     var usedQuotaBytes
     var onInitFsWithPromise = function(deferred)
     {
@@ -24,8 +24,8 @@ sync.factory('$store', function ($q) {
         return function errorHandler(e) {
             var msg = e.message;
 
-            console.log('Error: ' + msg);
-            deferred.reject()
+            console.error('Error: ' + e.name);
+            deferred.reject(e)
         }
     }
     function requestQuotaWithPromise(requestQuotaBytes, deferred)
@@ -35,6 +35,7 @@ sync.factory('$store', function ($q) {
             requestQuotaBytes,
             function( bytes ) {
                 grantedQuotaBytes = bytes
+                localStorage.setItem("$store_grantedBytes",bytes)
                 navigator.webkitPersistentStorage.queryUsageAndQuota(
                     function (usedBytes)
                     {
@@ -92,6 +93,7 @@ sync.factory('$store', function ($q) {
         {
             var deferred = $q.defer()
             requestQuotaWithPromise(requestQuotaBytes,deferred)
+            return deferred.promise
         },
         ready: deferred.promise,
         save: function(resourceName,data,type)
@@ -114,7 +116,7 @@ sync.factory('$store', function ($q) {
                         };
 
                         fileWriter.onerror = function(e) {
-                            deferred.reject(e.toString());
+                            deferred.reject(e);
                         };
 
                         // Create a new Blob and write it to log.txt.
@@ -142,204 +144,277 @@ sync.factory('$store', function ($q) {
 //</editor-fold>
 
 
-//<editor-fold desc="$download: Resumable download system, storing chunks of downloaded data persistently">
-sync.factory('$download', function ($http,$q,$store) {
+
+
+//<editor-fold desc="$entity: Worker for downloading binary files">
+sync.factory('$entity', function ($http,$q,$store) {
 
     var bytesChunk = 1024*256
-    var parallelConnectionsPerEntity = 8
-    if (SparkMD5 == undefined) {
-        throw "Spark MD5 not found"
-    }
+    return function downloadWorker (resourceURL,threadPool) {
+        var self = this //Public
+        var _self = {} //Private
 
-    var EntityFactory =  (function($store,$q,$http)
-    {
-
-        return function downloadWorker (resourceURL) {
-            var self = this //Public
-            var _self = {} //Private
-
-            var deferred = $q.defer()
-            self.endPoint = resourceURL;
-            self.id =SparkMD5.hash(resourceURL)
-            _self.deferred = $q.defer()
-            _self.dataChunks =JSON.parse(localStorage.getItem("$download_"+self.id+"dataChunks")) || [];
-            _self.contentLength = localStorage.getItem("$download_"+self.id+"contentLength") || 0;
-            _self.contentType = localStorage.getItem("$download_"+self.id+"contentType") || 0;
+        var deferred = $q.defer()
+        self.endPoint = resourceURL;
+        self.id =SparkMD5.hash(resourceURL)
+        _self.deferred = $q.defer()
+        _self.dataChunks =JSON.parse(localStorage.getItem("$download_"+self.id+"_dataChunks")) || [];
+        _self.contentLength = localStorage.getItem("$download_"+self.id+"_contentLength") || 0;
+        _self.contentType = localStorage.getItem("$download_"+self.id+"_contentType") || 0;
+        _self.src =localStorage.getItem("$download_"+self.id+"_src") || "0";
 
 
-            _self.freeConnections  = parallelConnectionsPerEntity
-            self.status = 0 //0-Idle 1-Downloading -1 - Pause
-            self.promise = _self.deferred.promise
-            _self.saveToDisk = function()
+        self.status = localStorage.getItem("$download_"+self.id+"_status") || 0; //2 - finished 0-Idle 1-Downloading -1 - Pause
+        self.promise = _self.deferred.promise
+        _self.saveToDisk = function()
+        {
+            localStorage.setItem("$download_"+self.id+"_dataChunks",JSON.stringify(_self.dataChunks));
+            localStorage.setItem("$download_"+self.id+"_contentLength",_self.contentLength);
+            localStorage.setItem("$download_"+self.id+"_contentType",_self.contentType);
+            localStorage.setItem("$download_"+self.id+"_src",_self.src);
+            localStorage.setItem("$download_"+self.id+"_status",self.status);
+        }
+        _self.sendStatus = function()
+        {
+            setTimeout(function()
             {
-                localStorage.setItem("$download_"+self.id+"dataChunks",JSON.stringify(_self.dataChunks));
-                localStorage.setItem("$download_"+self.id+"contentLength",_self.contentLength);
-                localStorage.setItem("$download_"+self.id+"contentType",_self.contentType);
-            }
-            _self.sendStatus = function()
-            {
-                setTimeout(function()
+                var downloaded = _self.dataChunks.reduce(function(a,b)
                 {
-                    var downloaded = _self.dataChunks.reduce(function(a,b)
+                    if(typeof a == "object")
                     {
-                        if(typeof a == "object")
-                        {
-                            return parseInt(a.done && a.chunk || 0) + parseInt(b.done && b.chunk || 0)
-                        }
-                        else
-                        {
-                            return a + parseInt(b.done && b.chunk || 0)
-                        }
-                    })
-                    _self.deferred.notify({target:self,status:self.status, downloaded:downloaded, total:_self.contentLength})
-                },0)
-
-            }
-
-
-
-            self.resume = function()
-            {
-                if(self.status == 1)
-                    return
-
-                self.status = 1
-                for(var i=0; i<_self.freeConnections; i++)
-                {
-                    setTimeout(_self.downloadChunk,0)
-                }
-            }
-            self.pause = function()
-            {
-                self.status = -1
-            }
-            _self.cleanAndSave= function()
-            {
-                console.log("Saving file: "+self.endPoint)
-                var allChunks = []
-                for(var i=0; i<_self.dataChunks.length;i++)
-                {
-                    var loadKey = "$download"+self.id+"_"+i;
-
-                    (function(ind){
-                        allChunks[ind]=$store.loadAsFile(loadKey).then(
-                            function(data)
-                            {
-                                _self.dataChunks[ind].data = data
-                                console.log("File chunk "+_self.dataChunks[ind].range)
-                            },function(err)
-                            {
-                                console.error("File chunk "+_self.dataChunks[ind].range+" not found!")
-                            })
-                    })(i)
-                }
-                $q.all(allChunks).then(function()
-                {
-                    var blob = new Blob(_self.dataChunks.map(function(chunk)
-                    {
-                        return new Blob([chunk.data],{type: _self.contentType})
-                    }))
-
-
-                    $store.save(self.id,blob, _self.contentType).then(function(src)
-                    {
-                        _self.deferred.resolve({target:self,status:self.status, total:_self.contentLength,url:src})
-                    })
-                })
-
-
-            }
-            _self.downloadChunk = function()
-            {
-                var freeChunks = _self.dataChunks.filter(function(chunk)
-                {
-                    return chunk.done==false && chunk.processing == undefined
-                })
-
-                if(freeChunks.length == 0 || _self.freeConnections == 0 || self.status != 1)
-                {
-                    /* Wait others to finish */
-                    return
-                }
-                else
-                {
-                    freeChunks[0].processing = true
-                    _self.freeConnections--
-                    console.log("Download: "+freeChunks[0].chunk)
-                    $http.get(self.endPoint, {
-                        headers: {'Range': "bytes="+freeChunks[0].range},
-                        responseType: 'blob'
-                    }).success(function (data, status, headers, config) {
-                        var storeKey = "$download"+self.id+"_"+_self.dataChunks.indexOf(freeChunks[0])
-                        console.log("Recieving: "+(new Blob([data])).size)
-
-                        $store.save(storeKey,data, "application/octet-stream").then(function()
-                        {
-                            delete freeChunks[0].processing
-                            freeChunks[0].done = true
-                            _self.freeConnections++
-                            _self.sendStatus()
-
-                            var doneChunks = _self.dataChunks.filter(function(chunk){ return chunk.done })
-                            if(doneChunks.length == _self.dataChunks.length)
-                            {
-                                _self.cleanAndSave()
-                            }
-                            else
-                            {
-                                _self.downloadChunk()
-                            }
-                        })
-                    }).error(function (data, status) {
-                        console.error('Chunk download error '+freeChunks[0].range)
-                        delete freeChunks[0].processing
-                        freeChunks[0].done = false
-                        _self.freeConnections++
-                        setTimeout(_self.downloadChunk,500)
-                    })
-                }
-            }
-
-
-
-            if(_self.contentLength==0) {
-                $http.head(resourceURL).success(function (data, status, headers, config) {
-                    _self.contentLength = parseInt(headers("Content-Length"))
-                    _self.contentType = headers("Content-Type")
-
-                    var bytes=0
-                    for(; bytes+bytesChunk<_self.contentLength; bytes+=bytesChunk)
-                    {
-                        _self.dataChunks.push({range:bytes+"-"+(bytes+bytesChunk-1),chunk:bytesChunk,done:false})
+                        return parseInt(a.done && a.chunk || 0) + parseInt(b.done && b.chunk || 0)
                     }
-                    _self.dataChunks.push({range:bytes+"-"+(_self.contentLength - 1),chunk:_self.contentLength - bytes ,done:false})
-                    _self.saveToDisk()
-                    _self.sendStatus()
-                    deferred.resolve(self)
-                }).error(function (data, status) {
-                    console.error('Head error', status, data)
-                    deferred.reject(self)
+                    else
+                    {
+                        return a + parseInt(b.done && b.chunk || 0)
+                    }
                 })
+                _self.deferred.notify({target:self,status:self.status, downloaded:downloaded, total:_self.contentLength})
+            },0)
+
+        }
+
+
+
+        self.resume = function()
+        {
+            if(self.status == 1)
+                return
+
+            self.status = 1
+            for(var i=0; i<threadPool.maxThreads; i++)
+            {
+                setTimeout(_self.downloadChunk,0)
+            }
+        }
+        self.pause = function()
+        {
+            self.status = -1
+            _self.saveToDisk()
+        }
+        _self.cleanAndSave= function()
+        {
+            if(_self.src!="0")
+                return
+            console.log("Saving file: "+self.endPoint)
+            var allChunks = []
+            for(var i=0; i<_self.dataChunks.length;i++)
+            {
+                var loadKey = "$download"+self.id+"_"+i;
+
+                (function(ind){
+                    allChunks[ind]=$store.loadAsFile(loadKey).then(
+                        function(data)
+                        {
+                            _self.dataChunks[ind].data = data
+                        },function(err)
+                        {
+                            console.error("File chunk "+_self.dataChunks[ind].range+" not found!")
+                        })
+                })(i)
+            }
+            $q.all(allChunks).then(function()
+            {
+                var blob = new Blob(_self.dataChunks.map(function(chunk)
+                {
+                    return new Blob([chunk.data],{type: _self.contentType})
+                }))
+
+
+                $store.save(self.id,blob, _self.contentType).then(function(src)
+                {
+                    _self.src = src
+                    self.status = 2
+                    _self.deferred.resolve({target:self,status:self.status, total:_self.contentLength,url:src})
+                    _self.saveToDisk()
+                },function(error)
+                {
+
+                    _self.deferred.reject(error)
+                    setTimeout(_self.cleanAndSave,2000)
+
+                })
+            })
+
+
+        }
+        _self.downloadChunk = function()
+        {
+            var freeChunks = _self.dataChunks.filter(function(chunk)
+            {
+                return chunk.done==false && chunk.processing == undefined
+            })
+
+            if(freeChunks.length == 0 || threadPool.maxThreads == 0 || self.status != 1)
+            {
+                /* Wait others to finish */
+                var doneChunks = _self.dataChunks.filter(function(chunk){ return chunk.done })
+                if(doneChunks.length == _self.dataChunks.length)
+                {
+                    _self.cleanAndSave()
+                }
+                return
             }
             else
             {
+                freeChunks[0].processing = true
+                threadPool.maxThreads--
+
+                $http.get(self.endPoint, {
+                    headers: {'Range': "bytes="+freeChunks[0].range},
+                    responseType: 'blob'
+                }).success(function (data, status, headers, config) {
+                    var storeKey = "$download"+self.id+"_"+_self.dataChunks.indexOf(freeChunks[0])
+
+                    $store.save(storeKey,data, "application/octet-stream").then(function()
+                    {
+                        delete freeChunks[0].processing
+                        freeChunks[0].done = true
+                        threadPool.maxThreads++
+                        _self.sendStatus()
+
+                        var doneChunks = _self.dataChunks.filter(function(chunk){ return chunk.done })
+                        if(doneChunks.length == _self.dataChunks.length)
+                        {
+                            _self.cleanAndSave()
+                        }
+                        else
+                        {
+                            _self.saveToDisk()
+                            _self.downloadChunk()
+                        }
+                    },function(error)
+                    {
+                        _self.deferred.reject(error)
+                        delete freeChunks[0].processing
+                        freeChunks[0].done = false
+                        threadPool.maxThreads++
+                        setTimeout(_self.downloadChunk,2000)
+                    })
+                }).error(function (data, status) {
+                    console.error('Chunk download error '+freeChunks[0].range)
+                    delete freeChunks[0].processing
+                    freeChunks[0].done = false
+                    threadPool.maxThreads++
+                    setTimeout(_self.downloadChunk,500)
+                })
+            }
+        }
+
+
+
+        if(_self.contentLength==0) {
+            $http.head(resourceURL).success(function (data, status, headers, config) {
+                _self.contentLength = parseInt(headers("Content-Length"))
+                _self.contentType = headers("Content-Type")
+
+                var bytes=0
+                for(; bytes+bytesChunk<_self.contentLength; bytes+=bytesChunk)
+                {
+                    _self.dataChunks.push({range:bytes+"-"+(bytes+bytesChunk-1),chunk:bytesChunk,done:false})
+                }
+                _self.dataChunks.push({range:bytes+"-"+(_self.contentLength - 1),chunk:_self.contentLength - bytes ,done:false})
+                _self.saveToDisk()
                 _self.sendStatus()
                 deferred.resolve(self)
-            }
-            return deferred.promise;
+            }).error(function (data, status) {
+                console.error('Head error', status, data)
+                deferred.reject(self)
+            })
         }
-    })($store,$q,$http)
+        else
+        {
+            //Remove previous processing trails
+            _self.dataChunks.map(function(chunk)
+            {
+                delete chunk.processing
+                return chunk
+            })
+            deferred.resolve(self)
+
+
+            _self.sendStatus()
+            if(_self.src!="0")
+            {
+                self.status = 2
+                _self.deferred.resolve({target:self,status:self.status, total:_self.contentLength,url:_self.src})
+            }
+
+
+            if(self.status==1)
+            {
+                self.status = 0
+                self.resume()
+            }
+        }
+        return deferred.promise;
+    }
+
+})
+//</editor-fold>
+
+
+//<editor-fold desc="$download: Resumable download system, storing chunks of downloaded data persistently">
+sync.factory('$download', function ($q,$entity) {
+
+
+    var downloadList = JSON.parse(localStorage.getItem("$download_list")) || []
+    var entities = []
+    var threadPool = {}
+    threadPool.maxThreads = 8
+    function saveToDisk()
+    {
+        localStorage.setItem("$download_list",JSON.stringify(downloadList))
+    }
 
     return {
-        ready: $store.ready,
-        resume:{},
-        download:function(resourceURL)
+        ready: function()
         {
-            return new EntityFactory(resourceURL)
-
+            var promiseEntities = []
+            for(var i=0; i<downloadList.length; i++)
+            {
+                (function(i) {
+                    promiseEntities.push((new $entity(downloadList[i].url,threadPool)).then(function(entity)
+                    {
+                        entities.push({name:downloadList[i].name, entity:entity})
+                    }))
+                })(i)
+            }
+            return $q.all(promiseEntities)
         },
-        getTasks:{},
-        getProgress:{}
+        list: entities,
+        add:function(newEntity)
+        {
+            var deferred = $q.defer()
+            downloadList.push({name:newEntity.name,url:newEntity.url})
+            var promise = (new $entity(newEntity.url,threadPool)).then(function(entity)
+            {
+                entities.push({name:newEntity.name, entity:entity})
+                deferred.resolve({name:newEntity.name, entity:entity})
+            })
+            saveToDisk()
+            return deferred.promise
+        }
     }
 })
 //</editor-fold>

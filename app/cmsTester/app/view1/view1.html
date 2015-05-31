@@ -2,6 +2,29 @@
     <input type="button" value="sync" ng-click="sync()"/>
     <as-upload-btn></as-upload-btn>
     <input type="checkbox" ng-model="editable"/>
+
+    <div>
+        <h2>
+            Total downloads: {{downloadList.length}}
+            <button ng-click="addDownload()">Add download</button>
+        </h2>
+        <h4 ng-show="error">
+            Not enought space. Available:{{availableQuota.granted/1024/1024}}MB
+            Used:{{availableQuota.used/1024/1024}}MB
+            <button ng-click="addQuota(100)">Add 100MB</button>
+        </h4>
+        <ul>
+            <li ng-repeat="entity in downloadList">
+
+                {{entity.name}}
+                <progress value="{{entity.progress}}" max="100"></progress>
+                <button ng-show="entity.entity.status>-1 && entity.entity.status!=2" ng-click="pauseEntity($index)">Pause</button>
+                <button ng-show="entity.entity.status==-1" ng-click="resumeEntity($index)">Resume</button>
+                <b  ng-show="entity.entity.status==-2">Done</b>
+                <a ng-href="{{entity.link}}" ng-show="entity.link">{{entity.link}}</a>
+            </li>
+        </ul>
+    </div>
     <!--<as-asset as-transformable model="dummyModel" ediable="editable"></as-asset>-->
     <!--<as-asset as-transformable></as-asset>-->
     <!--<ul>-->

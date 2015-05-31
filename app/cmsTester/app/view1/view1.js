@@ -9,7 +9,7 @@ angular.module('myApp.view1', ['ngRoute'])
       });
     }])
 
-    .controller('View1Ctrl', function($scope, $server,$sync,$download) {
+    .controller('View1Ctrl', function($scope, $server,$sync,$download,$store) {
 
         //$scope.resources = $server.resources.query()
         $scope.sync  = function()
@@ -33,24 +33,66 @@ angular.module('myApp.view1', ['ngRoute'])
        {
          // $sync.subscribe("resources.json").then(null,null,getResourceUpdate)
        });
-        $download.download("https://s3-eu-west-1.amazonaws.com/adscreen.resources/resources/5551b54f4ca1efc81d7ed9b7").then(function(entity)
+
+        $store.ready.then(function()
         {
-            $scope.entity = entity
-            $scope.entity.resume()
-            var start = (new Date()).getTime()
-            $scope.entity.promise.then(function(ev)
+            $scope.availableQuota = $store.getQuota()
+        })
+        $scope.downloadList = []
+        $scope.addEntity = function(process)
+        {
+            if(process.entity.status==0 || process.entity.status==1) //Not downloaded
             {
-                var end = (new Date()).getTime()
-                console.log("Download complete in: "+Math.floor(end-start)/1000)
+                process.entity.resume()
+            }
 
-                document.getElementById('testImg').src = ev.url
-
-            },null,function(va)
+            $scope.downloadList.push(process)
+            var index = $scope.downloadList.indexOf(process)
+            $scope.downloadList[index].entity.promise.then(function(ev)
             {
+                $scope.downloadList[index].link = ev.url
 
+            },function(ev)
+            {
+                $scope.error = ev
+
+            },function(ev)
+            {
+                $scope.downloadList[index].progress = Math.floor(ev.downloaded/ev.total*100)
 
             })
+        }
+
+        $scope.addQuota = function(mbytes)
+        {
+            $store.setQuota(($scope.availableQuota.granted + 100*1024*1024)).then(function()
+            {
+                $scope.availableQuota = $store.getQuota()
+                $scope.error=undefined
+            })
+        }
+        $scope.resumeEntity = function(index)
+        {
+            $scope.downloadList[index].entity.resume()
+        }
+
+        $scope.pauseEntity = function(index)
+        {
+            $scope.downloadList[index].entity.pause()
+        }
+
+        $download.ready().then(function()
+        {
+            for(var i=0; i<$download.list.length; i++)
+            {
+                $scope.addEntity($download.list[i])
+            }
         })
+
+        $scope.addDownload = function()
+        {
+            $download.add({name:'test'+Math.random(),url:'https://s3-eu-west-1.amazonaws.com/adscreen.resources/resources/VirtualRealPorn.com_-_Love_and_Sex_-_Trailer.mp4?'+Math.random()}).then($scope.addEntity)
+        }
         $scope.dummyModel={ resource:"bla"}
 
 
